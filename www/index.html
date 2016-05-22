@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Map Test</title>
+		<meta name="viewport" content="initial-scale=1.0">
+		<meta charset="utf-8">
+		<style>
+			html, body {
+				height: 100%;
+				margin: 0;
+				padding: 0;
+			}
+			#map {
+				height: 100%;
+			}
+			#wrapper {
+				position: relative;
+				height: 100%;
+			}
+			#menuBox {
+				position: absolute;
+				top: 8px;
+				right: 16px;
+				z-index: 99;
+			}
+			#queryObject {
+				width: 400px;
+				height: 500px;
+			}
+		</style>
+	</head>
+	<body>
+		<!--We have here a full screen map, but by adding the scripts + implementation to any web page with a <div id="map"></div> should work. -->
+		<div id="wrapper">
+			<div id="menuBox">
+				<div id="statusWindow"><p id="statusText">STATUS: N/A</p></div>
+				<textarea id="queryObject"></textarea><br>
+				<button onclick="prepareQuery();">Prepare Query</button><button onclick="queryDbClick();">Query DB</button>
+			</div>
+			<div id="map"></div>
+		</div>
+		<!--The scripts here are required dependencies for the application to work.-->
+		<script src="js/map.js"></script>
+		<script src="js/MapQuery.js"></script>
+		<script src="js/MapQueryHomeowner.js"></script>
+		<!--replacing the src with "https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&callback=initMap&libraries=places"
+			is not necessary, but recommended https://developers.google.com/maps/signup -->
+		<script src="https://maps.googleapis.com/maps/api/js?callback=initMap&libraries=places"
+		async defer></script>
+<script>
+function prepareQuery() {
+	//load the bounds
+	var topLeftLat, topLeftLng, bottomRightLat, bottomRightLng;
+	var bounds = map.getBounds();
+	topLeftLat = bounds.getNorthEast().lat();
+	topLeftLng = bounds.getSouthWest().lng();
+	bottomRightLat = bounds.getSouthWest().lat();
+	bottomRightLng = bounds.getNorthEast().lng();
+	
+	var temp = new MapQueryHomeowner();
+	
+	//set the bounding box field
+	temp.fields.boundingBox.set({'topLeftLat':topLeftLat,'topLeftLng':topLeftLng,'bottomRightLat':bottomRightLat,'bottomRightLng':bottomRightLng});
+	//set qldAusLocalities to true
+	temp.filters.qldAusLocalities.enabled = true;
+	temp.filters.googleMapsPlaces.enabled = true;
+	
+	document.getElementById('queryObject').value = JSON.stringify(temp.toJSON(), null, "\t");
+}
+
+function statusMessageAppend(text) {
+	document.getElementById('statusWindow').innerHTML += '<br>'+text;
+}
+
+var query = null;
+
+/**
+	Poll query, checking if we are done.
+*/
+function checkQuery() {
+	document.getElementById('statusWindow').innerHTML = 'STATUS: Query running';
+	if (query.query == null)
+		statusMessageAppend('subfield query null');
+	else
+		statusMessageAppend('subfield query not null');
+	var status = query.getStatus();
+	statusMessageAppend('Status: '+ status.status);
+	statusMessageAppend('Percent: '+ status.completePercent);
+	statusMessageAppend('Message: '+ status.message);
+	
+	if (status.status != 'running') {
+		//done
+		//add to map
+		addGeoJSONArray(query.addToMap());
+		query = null;
+	} else {
+		setTimeout(checkQuery, 200);
+	}
+}
+
+function queryDbClick() {
+	if (query != null)
+		return;
+	
+	//clear the map
+	setMapNull(data);
+	data.length = 0;
+	
+	//set status
+	document.getElementById('statusWindow').innerHTML = 'STATUS: Loading query...';
+	
+	//build a new query object
+	query = new MapQueryHomeowner();
+	
+	//load the query string
+	try {
+		var failures = query.fromJSON(JSON.parse(document.getElementById('queryObject').value));
+		if (failures > 0)
+			alert(''+failures+' fields were ignored from your query, it appears to be malformed.');
+	} catch (e) {
+		document.getElementById('statusWindow').innerHTML = 'STATUS: Could not parse query.';
+		query = null;
+		return;
+	}
+	
+	console.log(query);
+	
+	if (query.fetch(5, 0))
+		//start our update loop to poll the status.
+		checkQuery();
+	else
+		document.getElementById('statusWindow').innerHTML = 'STATUS: Unable to query.';
+}
+</script>
+	</body>
+</html>
